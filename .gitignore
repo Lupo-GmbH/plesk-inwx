@@ -1,0 +1,5 @@
+/src/plib/vendor/
+/route53/
+/src/*.zip
+/.idea/
+.DS_Store

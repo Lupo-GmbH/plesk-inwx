@@ -1,0 +1,21 @@
+{
+	"name": "lupognmbh/plesk-inwx-dns",
+	"description": "Plesk extension to manage INWX DNS records",
+	"license": "proprietary",
+	"authors": [
+		{
+			"name": "Lupo GmbH",
+			"email": "hello@lupo.gmbh"
+		}
+	],
+	"config": {
+		"vendor-dir": "src/plib/vendor"
+	},
+	"require": {
+		"php": "^7.4 || ^8.0",
+		"inwx/domrobot": "^3.5"
+	},
+	"require-dev": {
+		"plesk/pm-api-stubs": "^18.0"
+	}
+}
