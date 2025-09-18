@@ -3,3 +3,4 @@
 /src/*.zip
 /.idea/
 .DS_Store
+*.psd
