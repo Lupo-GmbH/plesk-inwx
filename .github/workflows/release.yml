@@ -27,9 +27,10 @@ jobs:
           # v1.0-6
           # inwx-1.0-6
           # inwx-v1.0-6
-          if [[ "$TAG_NAME" =~ ^(?:inwx-)?v?([0-9]+(?:\.[0-9]+)*)-([0-9]+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            RELEASE="${BASH_REMATCH[2]}"
+          # Note: Bash uses ERE (no non-capturing groups). Adjusted regex accordingly.
+          if [[ "$TAG_NAME" =~ ^(inwx-)?v?([0-9]+([.][0-9]+)*)-([0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[2]}"
+            RELEASE="${BASH_REMATCH[4]}"
           else
             echo "Error: Tag '$TAG_NAME' does not match expected pattern '(inwx-)?v?<version>-<release>' (e.g. 1.0-6)" >&2
             exit 1
