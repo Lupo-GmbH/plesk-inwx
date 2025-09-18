@@ -181,17 +181,39 @@ function create_record(Domrobot $client, int $roId, object $rr, int $defaultTtl)
     }
 
     if ($type === 'CAA') {
-        // For CAA, Plesk passes value like 'letsencrypt.org'; opt may contain flag and tag in one?
+        // For CAA, Plesk passes value like 'letsencrypt.org'; opt may contain flag and tag in one
         // Plesk passes opt as flag+tag (e.g., "0 issue"). If present, prepend it.
         $optPrefix = '';
         if (isset($rr->opt) && $rr->opt !== '') {
-            $optPrefix = trim((string)$rr->opt) . ' inwx.php';
+            $optPrefix = trim((string)$rr->opt) . ' ';
         }
         $params['content'] = $optPrefix . '"' . $value . '"';
     } elseif ($type === 'SRV') {
-        // For SRV, content is: weight port target; priority goes to prio
-        // Plesk provides rr->value like: "weight port target" or just target; we pass as-is
-        $params['content'] = $value;
+        // For SRV, INWX expects: prio (separate) and content as "weight port target"
+        // Plesk provides rr->opt as "priority weight port" and rr->value as target
+        $priority = null; $weight = null; $port = null;
+        $optStr = isset($rr->opt) ? trim((string)$rr->opt) : '';
+        if ($optStr !== '') {
+            $parts = preg_split('/\s+/', $optStr);
+            if (isset($parts[0]) && is_numeric($parts[0])) { $priority = (int)$parts[0]; }
+            if (isset($parts[1]) && is_numeric($parts[1])) { $weight = (int)$parts[1]; }
+            if (isset($parts[2]) && is_numeric($parts[2])) { $port = (int)$parts[2]; }
+        }
+        if ($priority !== null) {
+            $params['prio'] = $priority;
+        } else {
+            // fallback to previous behavior if only single number present in opt
+            if (isset($rr->opt) && $rr->opt !== '') {
+                $params['prio'] = (int)$rr->opt;
+            } else {
+                $params['prio'] = 0;
+            }
+        }
+        // Build content
+        $tgt = rtrim($value, '.');
+        $w = $weight !== null ? $weight : 0;
+        $p = $port !== null ? $port : 0;
+        $params['content'] = $w . ' ' . $p . ' ' . $tgt . '.';
     } else {
         // For most types, INWX expects pure content; for MX/NS/CNAME/A/AAAA, ensure no trailing dot duplication
         $params['content'] = $value;

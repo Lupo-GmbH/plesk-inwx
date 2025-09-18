@@ -70,7 +70,7 @@ How it works
 
 Record handling notes
 - MX: rr.opt is used as prio
-- SRV: rr.opt used as prio, rr.value is passed as content (weight port target)
+- SRV: rr.opt is parsed as "priority weight port" (prio is set from priority), and content becomes "weight port target" using rr.value as target.
 - TXT: value is normalized (tabs to spaces) and sent raw (INWX does not need wrap quotes)
 - CAA: value is sent quoted; if rr.opt contains flags/tag (e.g., "0 issue"), it is prefixed
 - TTL: per-record TTL if present; otherwise falls back to SOA TTL
