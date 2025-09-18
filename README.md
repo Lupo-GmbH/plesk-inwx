@@ -15,10 +15,11 @@ This repository provides a minimal Plesk extension that synchronizes DNS zones f
 
 ## What you get
 
-- Automatic creation/update/delete of zones on INWX when domains change in Plesk.
-- Full zone sync on each update: non-SOA/NS records are purged and recreated to match Plesk.
+- Incremental synchronization of DNS records on INWX when domains change in Plesk. Only the necessary create/update/delete operations are performed.
+- Zones are not created automatically at INWX. If a zone does not exist at INWX, the operation is reported as an error and no changes are applied.
+- Non‑conflicting records that exist only at INWX are preserved. On conflicts, Plesk’s data takes precedence.
 - Record mapping for common types: A, AAAA, CNAME, MX, TXT, SRV, CAA, …
-- Safety defaults: apex NS records are not managed (to avoid conflicts with INWX defaults), PTR ops are ignored.
+- Safety defaults: SOA and NS records are not changed by this backend; PTR operations from Plesk are ignored.
 
 ## Requirements
 
@@ -87,23 +88,42 @@ The script also reads `pm_Settings` keys if present:
 
 The included UI (Extensions > INWX DNS) writes these keys for you. For automated setups, you may still prefer environment variables.
 
+## Behavior summary
+
+- No automatic zone creation: the zone must already exist at INWX. If missing, the script logs an error and marks the operation as failed for that zone.
+- Incremental record sync: only records that changed are created/updated/deleted. SOA and NS are never changed by this backend.
+- Preservation of INWX-only records: records that exist only at INWX and do not conflict with Plesk are kept as-is.
+- Conflict resolution: when Plesk and INWX both manage the same “base key” (type|name|prio), Plesk wins; extra INWX records under that base key are removed.
+- PTR operations are ignored and only logged.
+
 ## How it works
 
 - Plesk calls `inwx.php` with a JSON “change feed” on stdin (see `TUTORIAL.md`). For create/update, the script:
-  1. Ensures the zone exists at INWX (`nameserver.create/info`)
-  2. Purges all non-SOA/NS records
-  3. Recreates all records from Plesk, honoring TTL and priorities (MX/SRV)
+  1. Authenticates to INWX (live or OTE) using environment variables or Plesk settings.
+  2. Checks that the target zone exists at INWX via `nameserver.info`. It does not call `nameserver.create`.
+  3. Builds the desired record set from Plesk, normalizes fields (name, content, prio, ttl) and filters out SOA/NS.
+  4. Fetches current INWX records and computes a minimal diff:
+     - Exact matches are skipped.
+     - If a desired record matches an existing record by base key (type|name|prio), the existing record is updated to the desired content/ttl.
+     - If no existing record matches, a new record is created.
+     - After processing desired records, remaining existing records are deleted only if their base key is managed by Plesk in this run; otherwise they are preserved.
 - For delete, it removes the zone (`nameserver.delete`).
 - PTR commands (`createPTRs`/`deletePTRs`) are logged and skipped, as reverse zones are usually not manageable here.
-- NS records are not recreated to avoid fighting INWX’s default NS set.
 
-## Record handling notes
+### Record handling notes
 
-- MX: `rr.opt` is used as prio.
-- SRV: `rr.opt` is parsed as `priority weight port` (prio is set from priority), and content becomes `weight port target` using `rr.value` as target.
-- TXT: value is normalized (tabs to spaces) and sent raw (INWX does not need wrap quotes).
-- CAA: value is sent quoted; if `rr.opt` contains flags/tag (e.g., `0 issue`), it is prefixed.
+- Supported record types include: A, AAAA, CNAME, MX, TXT, SRV, CAA, PTR, SSHFP, TLSA, NSEC, DNAME, DNSKEY, DS, HINFO, LOC, NAPTR, RP, SPF, URI. SOA and NS are skipped during sync.
+- MX: `rr.opt` is used as priority (`prio`).
+- SRV: `rr.opt` is parsed as `priority weight port`; `prio` is set from the priority, and content becomes `weight port target` (target from `rr.value`, trailing dot ensured).
+- TXT: value is normalized (tabs to spaces) and sent raw (no extra quoting is added beyond what INWX expects).
+- CAA: value is quoted; if `rr.opt` contains flags/tag (e.g., `0 issue`), it is prefixed to the content.
 - TTL: per-record TTL if present; otherwise falls back to SOA TTL.
+
+### Exit codes & logging
+
+- Logging: the script writes simple tagged lines to stdout/stderr, e.g. `[INFO]`, `[WARN]`, `[ERR]`. Check Plesk logs: `/var/log/plesk/panel.log` (Linux) or `%plesk_dir%\admin\logs\php_error.log` (Windows).
+- If INWX credentials are missing or login fails, the script logs a warning and exits 0 (to not block Plesk operations) without applying changes.
+- If the INWX zone is missing (auto-creation disabled), the script logs an error and marks the run as failed (overall exit code 255 if any zone failed).
 
 ## Manual testing from CLI
 
@@ -133,7 +153,7 @@ JSON
 plesk bin extension --exec inwx inwx.php < /tmp/zone.json
 ```
 
-You should see informational logs and, if credentials are correct, the zone and records will be created/updated at INWX.
+You should see informational logs and, if credentials are correct and the zone already exists at INWX, the records will be synchronized incrementally.
 
 ## Uninstall / disable
 
@@ -149,21 +169,22 @@ You should see informational logs and, if credentials are correct, the zone and 
 
 ## Troubleshooting
 
-- No effect, zone not created on INWX
-  - Ensure credentials are set and valid (`INWX_USERNAME`/`INWX_PASSWORD` or `pm_Settings`), and check if `INWX_LIVE` matches your account context (live vs. OTE).
-  - Review Plesk logs: `/var/log/plesk/panel.log` (Linux) or `%plesk_dir%\admin\logs\php_error.log` (Windows). The script logs to stdout/stderr with simple tags like `[INFO]` and `[ERR]`.
-- Authentication errors
-  - If your account enforces 2FA for API, add `INWX_2FA_SECRET` (TOTP shared secret) or disable API-2FA at INWX.
-- Duplicate/extra records remain
-  - This backend purges all non-SOA/NS records and recreates them. If you see leftovers, verify that the zone name in Plesk exactly matches the INWX zone and that there are no managed sub-zones.
-- NS records are different
-  - Intentional: We skip managing NS to avoid fighting the provider’s defaults.
+- Zone not found at INWX
+  - Create the zone manually in your INWX account. This backend will not create zones automatically.
+  - Verify the zone name in Plesk exactly matches the INWX zone (no trailing dot in INWX UI; Plesk sends with trailing dot and the backend handles it).
+- No effect, credentials/login issue
+  - Ensure `INWX_USERNAME`/`INWX_PASSWORD` (or Plesk settings) are set and valid, and that `INWX_LIVE` matches your account context (live vs. OTE). When login fails, the backend intentionally exits 0 after logging a warning.
+- Unexpected extra records at INWX
+  - By design, INWX-only records that do not conflict with Plesk are preserved. If you need Plesk to manage a given name/type/prio tuple, add the record in Plesk; the backend will then reconcile and remove conflicting INWX-only records under that base key.
+- NS records differ
+  - Intentional: the backend does not change SOA/NS at INWX.
 
 ## Notes & limitations
 
-- The implementation favors correctness over minimal deltas; it performs purge-and-recreate on each update.
+- Incremental synchronization: only records that are changed are touched; SOA and NS are never modified.
+- Non‑conflicting INWX records persist; conflicts are resolved in favor of Plesk for the same base key (type|name|prio).
+- No automatic zone creation; zones must pre-exist in INWX.
 - PTR commands from Plesk are ignored.
-- There is no admin UI yet; use environment variables or wire in `pm_Settings` via your own helper.
 
 ## License
 

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <module>
-    <id>inwx</id>
-    <name>INWX DNS</name>
-    <description>Use INWX DNS Service with Plesk</description>
-    <version>99.0</version>
-    <release>99</release>
-    <vendor>Lupo GmbH</vendor>
-    <url>https://www.lupo.gmbh</url>
-    <plesk_min_version>18.0.72</plesk_min_version>
+  <id>inwx</id>
+  <name>INWX DNS</name>
+  <description>Use INWX DNS Service with Plesk</description>
+  <version>99.0</version>
+  <release>99</release>
+  <vendor>Lupo GmbH</vendor>
+  <url>https://www.lupo.gmbh</url>
+  <plesk_min_version>18.0.72</plesk_min_version>
 </module>
