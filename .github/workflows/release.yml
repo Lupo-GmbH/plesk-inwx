@@ -67,6 +67,26 @@ jobs:
           echo "release=$RELEASE" >> $GITHUB_OUTPUT
           echo "archive_name=inwx-$VERSION-$RELEASE.zip" >> $GITHUB_OUTPUT
 
+      - name: Set up PHP and Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+
+      - name: Install PHP extensions (if needed)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y php-cli
+
+      - name: Install Composer dependencies
+        run: |
+          composer install \
+            --no-dev \
+            --prefer-dist \
+            --no-interaction \
+            --no-progress \
+            --optimize-autoloader
+
       - name: Create zip archive from src contents
         run: |
           cd src
