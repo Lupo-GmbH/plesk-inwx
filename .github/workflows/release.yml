@@ -49,6 +49,11 @@ jobs:
 
           echo "Updated src/meta.xml to version=$VERSION release=$RELEASE"
 
+      - name: Install XML tools (xmllint)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libxml2-utils
+
       - name: Extract version and release from meta.xml
         id: meta
         run: |
