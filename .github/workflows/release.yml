@@ -1,0 +1,101 @@
+name: Build and Release INWX package
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # NEW: If triggered by a tag push, parse the tag and update src/meta.xml
+      - name: Sync meta.xml from tag
+        if: github.ref_type == 'tag'
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "Tag: $TAG_NAME"
+          # Supported examples:
+          # 1.0-6
+          # v1.0-6
+          # inwx-1.0-6
+          # inwx-v1.0-6
+          if [[ "$TAG_NAME" =~ ^(?:inwx-)?v?([0-9]+(?:\.[0-9]+)*)-([0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            RELEASE="${BASH_REMATCH[2]}"
+          else
+            echo "Error: Tag '$TAG_NAME' does not match expected pattern '(inwx-)?v?<version>-<release>' (e.g. 1.0-6)" >&2
+            exit 1
+          fi
+
+          echo "Parsed version=$VERSION, release=$RELEASE"
+
+          sudo apt-get update -y
+          sudo apt-get install -y xmlstarlet
+
+          # Update src/meta.xml nodes
+          xmlstarlet ed -L \
+            -u '//module/version' -v "$VERSION" \
+            -u '//module/release' -v "$RELEASE" \
+            src/meta.xml
+
+          echo "Updated src/meta.xml to version=$VERSION release=$RELEASE"
+
+      - name: Extract version and release from meta.xml
+        id: meta
+        run: |
+          VERSION=$(xmllint --xpath 'string(//module/version)' src/meta.xml)
+          RELEASE=$(xmllint --xpath 'string(//module/release)' src/meta.xml)
+          if [ -z "$VERSION" ] || [ -z "$RELEASE" ]; then
+            echo "Failed to read version or release from src/meta.xml" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "release=$RELEASE" >> $GITHUB_OUTPUT
+          echo "archive_name=inwx-$VERSION-$RELEASE.zip" >> $GITHUB_OUTPUT
+
+      - name: Create zip archive from src contents
+        run: |
+          cd src
+          zip -r "../${{ steps.meta.outputs.archive_name }}" . -x "**/.git*" "**/.DS_Store"
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          # Prefer the tag that triggered the workflow, otherwise use inwx-<version>-<release>
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && -n "${GITHUB_REF_NAME}" ]]; then
+            echo "name=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "name=inwx-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.release }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag if needed (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag $TAG_NAME already exists locally."
+          else
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+            git push origin "$TAG_NAME"
+          fi
+
+      - name: Create GitHub Release and upload asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: ${{ steps.tag.outputs.name }}
+          files: ${{ steps.meta.outputs.archive_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
