@@ -63,7 +63,7 @@ function inwx_client(): ?Domrobot
 
 function ensure_zone(Domrobot $client, string $zoneName): ?int
 {
-    // Return roId of zone if exists, otherwise create with type NATIVE
+    // Return roId of zone if exists. Do NOT create automatically.
     // INWX expects zone names without trailing dot
     $name = rtrim($zoneName, '.');
 
@@ -72,27 +72,9 @@ function ensure_zone(Domrobot $client, string $zoneName): ?int
         if (isset($info['code']) && (int)$info['code'] === 1000 && isset($info['resData']['roId'])) {
             return (int)$info['resData']['roId'];
         }
+        inwx_log('err', "Zone does not exist on INWX (auto-creation disabled): {$zoneName}");
     } catch (Exception $e) {
-        // fall through to try create
-    }
-
-    try {
-        $create = $client->call('nameserver', 'create', [
-            'domain' => $name,
-            'type' => 'NATIVE',
-            'ignoreExisting' => true,
-        ]);
-        if (isset($create['code']) && (int)$create['code'] === 1000 && isset($create['resData']['roId'])) {
-            inwx_log('info', "Zone created: {$zoneName}");
-            return (int)$create['resData']['roId'];
-        }
-        // If already exists, try info again
-        $info = $client->call('nameserver', 'info', ['domain' => $name]);
-        if (isset($info['code']) && (int)$info['code'] === 1000 && isset($info['resData']['roId'])) {
-            return (int)$info['resData']['roId'];
-        }
-    } catch (Exception $e) {
-        inwx_log('err', 'INWX zone ensure exception: ' . $e->getMessage());
+        inwx_log('err', 'INWX nameserver.info exception: ' . $e->getMessage());
     }
 
     return null;
