@@ -1,7 +1,7 @@
 {
 	"name": "lupognmbh/plesk-inwx-dns",
 	"description": "Plesk extension to manage INWX DNS records",
-	"license": "proprietary",
+	"license": "Apache-2.0",
 	"authors": [
 		{
 			"name": "Lupo GmbH",
